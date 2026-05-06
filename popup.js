@@ -251,12 +251,60 @@ function isLikelyAddress(value, phone, rating, reviewCount) {
     return (hasStreetWord && hasAddressNumber) || hasPostalCode;
 }
 
+function isGoogleMapsPlaceUrl(url) {
+    return /(^|\/)maps\/place\//i.test(url || '');
+}
+
+function getPlaceResultEntries() {
+    var links = Array.from(document.querySelectorAll('a[href*="/maps/place/"]'));
+    var entries = [];
+    var seenContainers = new Set();
+    var seenLinks = new Set();
+
+    links.forEach(function(link) {
+        var container = link.closest('[jsaction*="mouseover:pane"], .Nv2PK, [role="article"]');
+        var entryKey = container || link;
+        var href = link.href || link.getAttribute('href') || '';
+
+        if (seenContainers.has(entryKey) || seenLinks.has(href)) {
+            return;
+        }
+
+        seenContainers.add(entryKey);
+        seenLinks.add(href);
+        entries.push({ link: link, container: container || link.closest('div') });
+    });
+
+    if (entries.length > 0) {
+        return entries;
+    }
+
+    return Array.from(document.querySelectorAll('[jsaction*="mouseover:pane"], .Nv2PK, [role="article"]')).map(function(container) {
+        return {
+            link: container.querySelector('a[href*="/maps/place/"]'),
+            container: container
+        };
+    });
+}
+
+function extractTitle(container, link) {
+    var titleElement = container ? container.querySelector('.fontHeadlineSmall, .qBF1Pd, [role="heading"]') : null;
+    var title = titleElement ? titleElement.textContent : '';
+
+    if (!title && link) {
+        title = link.getAttribute('aria-label') || link.textContent || '';
+    }
+
+    return getCleanText(title);
+}
+
 
 function scrapeData() {
-    var links = Array.from(document.querySelectorAll('a[href^="https://www.google.com/maps/place"]'));
-    return links.map(link => {
-        var container = link.closest('[jsaction*="mouseover:pane"]');
-        var titleText = container ? container.querySelector('.fontHeadlineSmall').textContent : '';
+    var entries = getPlaceResultEntries();
+    return entries.map(entry => {
+        var link = entry.link;
+        var container = entry.container;
+        var titleText = extractTitle(container, link);
         var rating = '';
         var reviewCount = '';
         var phone = '';
@@ -292,7 +340,7 @@ function scrapeData() {
         // Company URL
         if (container) {
             var allLinks = Array.from(container.querySelectorAll('a[href]'));
-            var filteredLinks = allLinks.filter(a => !a.href.startsWith("https://www.google.com/maps/place/"));
+            var filteredLinks = allLinks.filter(a => !isGoogleMapsPlaceUrl(a.href));
             if (filteredLinks.length > 0) {
                 companyUrl = filteredLinks[0].href;
             }
@@ -307,8 +355,10 @@ function scrapeData() {
             industry: industry,
             address: address,
             companyUrl: companyUrl,
-            href: link.href,
+            href: link ? link.href : '',
         };
+    }).filter(function(item) {
+        return item.title || item.href;
     });
 }
 
