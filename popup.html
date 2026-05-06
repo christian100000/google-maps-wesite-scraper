@@ -31,10 +31,27 @@
     }
     .input {
       padding: 8px 15px;
-      margin-right: 10px; 
+      margin-right: 10px;
       border: 1px solid #ddd;
       border-radius: 20px;
       font-family: 'Poppins', sans-serif;
+    }
+    .filter-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: #333;
+      font-size: 14px;
+      user-select: none;
+    }
+    .filter-option input {
+      margin: 0;
+    }
+    #resultSummary {
+      margin-top: 14px;
+      color: #555;
+      font-size: 13px;
     }
     table {
       width: 100%;
@@ -80,6 +97,11 @@
   <button id="actionButton" class="button" disabled>Scrape Google Maps</button>
   <button id="downloadCsvButton" class="button" style="margin-left: 10px;" disabled>Download as CSV</button>
   <input type="text" id="filenameInput" class="input" placeholder="Enter file name" style="margin-left: 10px;" />
+  <label id="noWebsiteFilterLabel" class="filter-option">
+    <input type="checkbox" id="noWebsiteFilter" />
+    Only no website or Facebook
+  </label>
+  <div id="resultSummary"></div>
   <table id="resultsTable">
     <thead>
       <tr>

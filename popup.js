@@ -5,6 +5,9 @@ document.addEventListener('DOMContentLoaded', function() {
         var downloadCsvButton = document.getElementById('downloadCsvButton');
         var resultsTable = document.getElementById('resultsTable');
         var filenameInput = document.getElementById('filenameInput');
+        var noWebsiteFilter = document.getElementById('noWebsiteFilter');
+        var noWebsiteFilterLabel = document.getElementById('noWebsiteFilterLabel');
+        var resultSummary = document.getElementById('resultSummary');
 
         if (currentTab && currentTab.url.includes("://www.google.com/maps/search")) {
             document.getElementById('message').textContent = "Let's scrape Google Maps!";
@@ -19,12 +22,17 @@ document.addEventListener('DOMContentLoaded', function() {
             linkElement.target = '_blank'; 
             messageElement.appendChild(linkElement);
 
-            actionButton.style.display = 'none'; 
+            actionButton.style.display = 'none';
             downloadCsvButton.style.display = 'none';
-            filenameInput.style.display = 'none'; 
+            filenameInput.style.display = 'none';
+            noWebsiteFilterLabel.style.display = 'none';
+            resultSummary.style.display = 'none';
         }
 
         actionButton.addEventListener('click', function() {
+            downloadCsvButton.disabled = true;
+            resultSummary.textContent = '';
+
             chrome.scripting.executeScript({
                 target: {tabId: currentTab.id},
                 function: scrapeData
@@ -43,9 +51,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 resultsTable.appendChild(headerRow);
 
+                if (!results || !results[0] || !results[0].result) {
+                    resultSummary.textContent = 'No businesses found.';
+                    return;
+                }
+                var scrapedItems = results[0].result;
+                var visibleItems = noWebsiteFilter.checked
+                    ? scrapedItems.filter(isNoWebsiteOrFacebookBusiness)
+                    : scrapedItems;
+
+                resultSummary.textContent = getResultSummary(scrapedItems.length, visibleItems.length, noWebsiteFilter.checked);
+
                 // Add new results to the table
-                if (!results || !results[0] || !results[0].result) return;
-                results[0].result.forEach(function(item) {
+                visibleItems.forEach(function(item) {
                     var row = document.createElement('tr');
                     ['title', 'rating', 'reviewCount', 'phone', 'industry', 'address', 'companyUrl', 'href'].forEach(function(key) {
                         var cell = document.createElement('td');
@@ -60,8 +78,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     resultsTable.appendChild(row);
                 });
 
-                if (results && results[0] && results[0].result && results[0].result.length > 0) {
+                if (visibleItems.length > 0) {
                     downloadCsvButton.disabled = false;
+                } else {
+                    downloadCsvButton.disabled = true;
                 }
             });
         });
@@ -79,6 +99,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
     });
 });
+
+function isNoWebsiteOrFacebookBusiness(item) {
+    var website = (item.companyUrl || '').trim();
+    return !website || isFacebookUrl(website);
+}
+
+function isFacebookUrl(url) {
+    try {
+        var hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+        return hostname === 'facebook.com' || hostname.endsWith('.facebook.com') || hostname === 'fb.com';
+    } catch (error) {
+        return /(^|\.)facebook\.com|fb\.com/i.test(url);
+    }
+}
+
+function getResultSummary(totalCount, visibleCount, isFiltered) {
+    if (!isFiltered) {
+        return totalCount + ' businesses scraped.';
+    }
+
+    return visibleCount + ' of ' + totalCount + ' businesses have no website or use Facebook.';
+}
 
 
 function scrapeData() {
