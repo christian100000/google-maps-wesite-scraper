@@ -122,6 +122,135 @@ function getResultSummary(totalCount, visibleCount, isFiltered) {
     return visibleCount + ' of ' + totalCount + ' businesses have no website or use Facebook.';
 }
 
+function getCleanText(value) {
+    return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+function getTextParts(container) {
+    var text = container ? container.innerText || container.textContent || '' : '';
+    return text
+        .split(/\s*[\u00b7\u2022]\s*|\n+/)
+        .map(getCleanText)
+        .filter(Boolean);
+}
+
+function extractRatingAndReviews(container) {
+    var rating = '';
+    var reviewCount = '';
+
+    if (!container) {
+        return { rating: rating, reviewCount: reviewCount };
+    }
+
+    var ratingElement = container.querySelector('.MW4etd');
+    if (ratingElement) {
+        rating = getCleanText(ratingElement.textContent);
+    }
+
+    var reviewElement = container.querySelector('.UY7F9');
+    if (reviewElement) {
+        reviewCount = getCleanText(reviewElement.textContent).replace(/[()]/g, '');
+    }
+
+    if (rating && reviewCount) {
+        return { rating: rating, reviewCount: reviewCount };
+    }
+
+    var labelledRating = Array.from(container.querySelectorAll('[aria-label]')).find(function(element) {
+        return /star|stelle|\u00e9toile|estrella|stern|recension|review/i.test(element.getAttribute('aria-label') || '');
+    });
+    var label = labelledRating ? labelledRating.getAttribute('aria-label') || '' : '';
+
+    if (!rating) {
+        var ratingMatch = label.match(/(\d+(?:[,.]\d+)?)/);
+        rating = ratingMatch ? ratingMatch[1] : '';
+    }
+
+    if (!reviewCount) {
+        var reviewMatch = label.match(/(?:star|stars|stelle|\u00e9toile|\u00e9toiles|estrella|estrellas|stern)[^\d]*([\d.,]+)/i)
+            || label.match(/([\d.,]+)\s*(?:review|reviews|recensioni|recension|avis|resenas|rese\u00f1as|bewertungen)/i);
+        reviewCount = reviewMatch ? reviewMatch[1] : '';
+    }
+
+    return { rating: rating, reviewCount: reviewCount };
+}
+
+function extractPhone(container) {
+    var phoneLabel = findLabelValue(container, /^(phone|telefono|call|chiama):?\s*/i);
+    if (phoneLabel) {
+        return phoneLabel;
+    }
+
+    var text = getCleanText(container ? container.innerText || container.textContent : '');
+    var phoneMatch = text.match(/(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?){2,5}\d{2,4}/);
+
+    if (!phoneMatch) {
+        return '';
+    }
+
+    var phone = getCleanText(phoneMatch[0]);
+    var digits = phone.replace(/\D/g, '');
+    return digits.length >= 7 ? phone : '';
+}
+
+function extractAddress(container, phone, rating, reviewCount) {
+    var addressLabel = findLabelValue(container, /^(address|indirizzo):?\s*/i);
+    if (addressLabel) {
+        return addressLabel;
+    }
+
+    var parts = getTextParts(container);
+    var addressPart = parts.find(function(part) {
+        return isLikelyAddress(part, phone, rating, reviewCount);
+    });
+
+    return addressPart || '';
+}
+
+function findLabelValue(container, labelRegex) {
+    if (!container || !container.querySelectorAll) {
+        return '';
+    }
+
+    var labelledElement = Array.from(container.querySelectorAll('[aria-label]')).find(function(element) {
+        return labelRegex.test(element.getAttribute('aria-label') || '');
+    });
+    var label = labelledElement ? labelledElement.getAttribute('aria-label') || '' : '';
+
+    return getCleanText(label.replace(labelRegex, ''));
+}
+
+function isLikelyAddress(value, phone, rating, reviewCount) {
+    var text = getCleanText(value);
+
+    if (!text || text === phone || text === rating || text === reviewCount) {
+        return false;
+    }
+
+    if (/\d+(?:[,.]\d+)?\s*(?:star|stelle|review|reviews|recensioni|recension)/i.test(text)) {
+        return false;
+    }
+
+    if (/^(open|closed|aperto|chiuso|opens|closes|closing|hours|24 hours)\b/i.test(text)) {
+        return false;
+    }
+
+    if (/^(website|directions|save|share|call|menu|order|prenota|indicazioni|salva|condividi|chiama)$/i.test(text)) {
+        return false;
+    }
+
+    var foundPhone = extractPhone({ innerText: text });
+    if (foundPhone && foundPhone === text) {
+        return false;
+    }
+
+    var hasStreetWord = /\b(via|viale|piazza|piazzale|corso|largo|strada|vicolo|localita|street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|square|sq\.?|plaza|rue|calle)\b/i.test(text);
+    var hasAddressNumber = /\d/.test(text);
+    var hasPostalCode = /\b\d{5}\b/.test(text);
+
+    return (hasStreetWord && hasAddressNumber) || hasPostalCode;
+}
+
 
 function scrapeData() {
     var links = Array.from(document.querySelectorAll('a[href^="https://www.google.com/maps/place"]'));
@@ -136,47 +265,27 @@ function scrapeData() {
         var companyUrl = '';
 
         // Rating and Reviews
-        if (container) {
-            var roleImgContainer = container.querySelector('[role="img"]');
-            
-            if (roleImgContainer) {
-                var ariaLabel = roleImgContainer.getAttribute('aria-label');
-            
-                if (ariaLabel && ariaLabel.includes("stars")) {
-                    var parts = ariaLabel.split(' ');
-                    var rating = parts[0];
-                    var reviewCount = '(' + parts[2] + ')'; 
-                } else {
-                    rating = '0';
-                    reviewCount = '0';
-                }
-            }
-        }
+        var ratingData = extractRatingAndReviews(container);
+        rating = ratingData.rating;
+        reviewCount = ratingData.reviewCount;
+
+        // Phone Numbers
+        phone = extractPhone(container);
 
         // Address and Industry
         if (container) {
             var containerText = container.textContent || '';
-            var addressRegex = /\d+ [\w\s]+(?:#\s*\d+|Suite\s*\d+|Apt\s*\d+)?/;
-            var addressMatch = containerText.match(addressRegex);
+            address = extractAddress(container, phone, rating, reviewCount);
 
-            if (addressMatch) {
-                address = addressMatch[0];
-
+            if (address) {
                 // Extract industry text based on the position before the address
                 var textBeforeAddress = containerText.substring(0, containerText.indexOf(address)).trim();
                 var ratingIndex = textBeforeAddress.lastIndexOf(rating + reviewCount);
                 if (ratingIndex !== -1) {
                     // Assuming industry is the first significant text after rating and review count
                     var rawIndustryText = textBeforeAddress.substring(ratingIndex + (rating + reviewCount).length).trim().split(/[\r\n]+/)[0];
-                    industry = rawIndustryText.replace(/[·.,#!?]/g, '').trim();
+                    industry = rawIndustryText.replace(/[\u00b7.,#!?]/g, '').trim();
                 }
-                var filterRegex = /\b(Closed|Open 24 hours|24 hours)|Open\b/g;
-                address = address.replace(filterRegex, '').trim();
-                address = address.replace(/(\d+)(Open)/g, '$1').trim();
-                address = address.replace(/(\w)(Open)/g, '$1').trim();
-                address = address.replace(/(\w)(Closed)/g, '$1').trim();
-            } else {
-                address = '';
             }
         }
 
@@ -187,14 +296,6 @@ function scrapeData() {
             if (filteredLinks.length > 0) {
                 companyUrl = filteredLinks[0].href;
             }
-        }
-
-        // Phone Numbers
-        if (container) {
-            var containerText = container.textContent || '';
-            var phoneRegex = /(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
-            var phoneMatch = containerText.match(phoneRegex);
-            phone = phoneMatch ? phoneMatch[0] : '';
         }
 
         // Return the data as an object
