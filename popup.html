@@ -36,6 +36,10 @@
       border-radius: 20px;
       font-family: 'Poppins', sans-serif;
     }
+    .file-input {
+      margin-top: 12px;
+      font-family: 'Poppins', sans-serif;
+    }
     .filter-option {
       display: flex;
       align-items: center;
@@ -97,6 +101,8 @@
   <button id="actionButton" class="button" disabled>Scrape Google Maps</button>
   <button id="downloadCsvButton" class="button" style="margin-left: 10px;" disabled>Download as CSV</button>
   <input type="text" id="filenameInput" class="input" placeholder="Enter file name" style="margin-left: 10px;" />
+  <input type="file" id="existingCsvInput" class="file-input" accept=".csv,text/csv" />
+  <button id="mergeCsvButton" class="button" style="margin-left: 10px;" disabled>Update CSV</button>
   <label id="noWebsiteFilterLabel" class="filter-option">
     <input type="checkbox" id="noWebsiteFilter" />
     Only no website or Facebook
